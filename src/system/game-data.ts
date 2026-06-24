@@ -24,7 +24,6 @@ import { Device } from "#enums/devices";
 import { DexAttr } from "#enums/dex-attr";
 import { GameDataType } from "#enums/game-data-type";
 import { GameModes } from "#enums/game-modes";
-import type { MysteryEncounterType } from "#enums/mystery-encounter-type";
 import { Nature } from "#enums/nature";
 import { PlayerGender } from "#enums/player-gender";
 import { SpeciesId } from "#enums/species-id";
@@ -75,7 +74,7 @@ import { RUN_HISTORY_LIMIT } from "#ui/run-history-ui-handler";
 import { applyChallenges } from "#utils/challenge-utils";
 import { fixedInt, NumberHolder, randInt, randSeedItem } from "#utils/common";
 import { decrypt, encrypt } from "#utils/data";
-import { getEnumKeys } from "#utils/enums";
+import { getEnumKeys, getEnumValues } from "#utils/enums";
 import { getPokemonSpecies } from "#utils/pokemon-utils";
 import { toCamelCase } from "#utils/strings";
 import { AES, enc } from "crypto-js";
@@ -215,9 +214,63 @@ export class GameData {
     return this.unlocks[unlockable];
   }
 
+  /**
+   * @returns Whether the system data is valid
+   */
+  private validateSystemData(data: SystemSaveData): boolean {
+    if (data.starterData == null) {
+      console.error("Starter data missing!");
+      return false;
+    }
+
+    for (const speciesId of getEnumValues(SpeciesId)) {
+      if (!speciesDataRegistry.isStarter(speciesId) || defaultStarterSpecies.includes(speciesId)) {
+        continue;
+      }
+
+      const starterEntry = data.starterData[speciesId];
+      const dexEntry = data.dexData[speciesId];
+
+      const species = SpeciesId[speciesId];
+
+      if (starterEntry == null) {
+        console.error("Missing starter data for %s (%d)!", species, speciesId);
+        return false;
+      }
+      if (dexEntry == null) {
+        console.error("Missing dex data for %s (%d)!", species, speciesId);
+        return false;
+      }
+
+      const hasStarterData =
+        starterEntry.abilityAttr > 1
+        || starterEntry.eggMoves > 0
+        || starterEntry.moveset != null
+        || starterEntry.passiveAttr > 0
+        || starterEntry.valueReduction > 0;
+
+      const noDexData = dexEntry.caughtCount === 0 && dexEntry.hatchedCount === 0 && dexEntry.caughtAttr === 0n;
+
+      if (hasStarterData && noDexData) {
+        console.error("Corrupt save data detected, save rejected!");
+        console.warn("Species: %s (%d)", species, speciesId);
+        console.warn(starterEntry);
+        console.warn(dexEntry);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   public async saveSystem(): Promise<boolean> {
     globalScene.ui.savingIcon.show();
     const data = this.getSystemSaveData();
+
+    if (!this.validateSystemData(data)) {
+      globalScene.ui.savingIcon.hide();
+      return false;
+    }
 
     const maxIntAttrValue = 0x80000000;
     const systemData = JSON.stringify(data, (_k: any, v: any) =>
@@ -1148,21 +1201,25 @@ export class GameData {
     // TODO: Add `null`/`undefined` to the corresponding type signatures for this
     // (or prevent them from being null)
     // If the value is able to *not exist*, it should say so in the code
-    const sessionData = JSON.parse(dataStr, (k: string, v: any) => {
-      // TODO: Move this to occur _after_ migrate scripts (and refactor all non-assignment duties into migrate scripts)
-      // This should ideally be just a giant assign block
+    const rawData = JSON.parse(dataStr);
+    applySessionVersionMigration(rawData);
+
+    for (const [k, v] of Object.entries(rawData)) {
       switch (k) {
         case "party":
         case "enemyParty": {
           const ret: PokemonData[] = [];
           for (const pd of v ?? []) {
+            // TODO: Consider invoking a dedicated deserialization method instead of the constructor
             ret.push(new PokemonData(pd));
           }
-          return ret;
+          rawData[k] = ret;
+          continue;
         }
 
         case "trainer":
-          return v ? new TrainerData(v) : null;
+          rawData[k] = v ? new TrainerData(v) : null;
+          continue;
 
         case "modifiers":
         case "enemyModifiers": {
@@ -1184,38 +1241,34 @@ export class GameData {
 
             ret.push(new PersistentModifierData(md, k === "modifiers"));
           }
-          return ret;
+          rawData[k] = ret;
+          continue;
         }
 
         case "arena":
-          return new ArenaData(v as SerializedArenaData);
+          rawData[k] = new ArenaData(v as SerializedArenaData);
+          continue;
 
         case "challenges": {
           const ret: ChallengeData[] = [];
           for (const c of v ?? []) {
             ret.push(new ChallengeData(c));
           }
-          return ret;
+          rawData[k] = ret;
+          continue;
         }
 
-        case "mysteryEncounterType":
-          return v as MysteryEncounterType;
-
         case "mysteryEncounterSaveData":
-          return new MysteryEncounterSaveData(v);
-
+          rawData[k] = new MysteryEncounterSaveData(v);
+          continue;
         case "dailyConfig":
           // make sure the config is valid
-          return parseDailySeed(JSON.stringify(v));
-
-        default:
-          return v;
+          rawData[k] = parseDailySeed(JSON.stringify(v));
+          continue;
       }
-    }) as SessionSaveData;
+    }
 
-    applySessionVersionMigration(sessionData);
-
-    return sessionData;
+    return rawData;
   }
 
   /**
@@ -1256,6 +1309,13 @@ export class GameData {
     const systemData = useCachedSystem
       ? GameData.parseSystemData(decrypt(localStorage.getItem(`data_${loggedInUser?.username}`)!, bypassLogin))
       : this.getSystemSaveData(); // TODO: is this bang correct?
+
+    if (!this.validateSystemData(systemData)) {
+      if (sync) {
+        globalScene.ui.savingIcon.hide();
+      }
+      return false;
+    }
 
     const request = {
       system: systemData,
