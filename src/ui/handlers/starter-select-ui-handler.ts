@@ -72,6 +72,7 @@ import {
 } from "#utils/common";
 import type { StarterPreferences } from "#utils/data";
 import { deepCopy, loadStarterPreferences, saveStarterPreferences } from "#utils/data";
+import { isSpeciesFullyComplete } from "#utils/pokedex-completion-utils";
 import { getDexNumber, getPokemonSpeciesForm, getPokerusStarters } from "#utils/pokemon-utils";
 import { toCamelCase, toTitleCase } from "#utils/strings";
 import i18next from "i18next";
@@ -586,12 +587,18 @@ export class StarterSelectUiHandler extends MessageUiHandler {
       new DropDownLabel(i18next.t("filterBar:pokerus"), undefined, DropDownState.OFF),
       new DropDownLabel(i18next.t("filterBar:hasPokerus"), undefined, DropDownState.ON),
     ];
+    const completeLabels = [
+      new DropDownLabel(i18next.t("filterBar:complete"), undefined, DropDownState.OFF),
+      new DropDownLabel(i18next.t("filterBar:isComplete"), undefined, DropDownState.ON),
+      new DropDownLabel(i18next.t("filterBar:notComplete"), undefined, DropDownState.EXCLUDE),
+    ];
     const miscOptions = [
       new DropDownOption("FAVORITE", favoriteLabels),
       new DropDownOption("WIN", winLabels),
       new DropDownOption("HIDDEN_ABILITY", hiddenAbilityLabels),
       new DropDownOption("EGG", eggLabels),
       new DropDownOption("POKERUS", pokerusLabels),
+      new DropDownOption("COMPLETE", completeLabels),
     ];
     this.filterBar.addFilter(
       DropDownColumn.MISC,
@@ -3322,6 +3329,21 @@ export class StarterSelectUiHandler extends MessageUiHandler {
         return false;
       });
 
+      // 100% Complete Filter
+      const isComplete = isSpeciesFullyComplete(container.species, dexEntry, starterData);
+      const fitsComplete = this.filterBar.getVals(DropDownColumn.MISC).some(misc => {
+        if (misc.val === "COMPLETE" && misc.state === DropDownState.ON) {
+          return isComplete;
+        }
+        if (misc.val === "COMPLETE" && misc.state === DropDownState.EXCLUDE) {
+          return !isComplete;
+        }
+        if (misc.val === "COMPLETE" && misc.state === DropDownState.OFF) {
+          return true;
+        }
+        return false;
+      });
+
       if (
         fitsGen
         && fitsType
@@ -3333,6 +3355,7 @@ export class StarterSelectUiHandler extends MessageUiHandler {
         && fitsHA
         && fitsEgg
         && fitsPokerus
+        && fitsComplete
       ) {
         this.filteredStarterContainers.push(container);
       }

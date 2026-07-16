@@ -46,6 +46,7 @@ import { BooleanHolder, fixedInt, getLocalizedSpriteKey, padInt, randIntRange } 
 import type { StarterPreferences } from "#utils/data";
 import { loadStarterPreferences } from "#utils/data";
 import { enumValueToKey } from "#utils/enums";
+import { isSpeciesFullyComplete } from "#utils/pokedex-completion-utils";
 import { getDexNumber, getPokemonSpeciesForm, getPokerusStarters } from "#utils/pokemon-utils";
 import { toCamelCase } from "#utils/strings";
 import i18next from "i18next";
@@ -476,6 +477,11 @@ export class PokedexUiHandler extends MessageUiHandler {
       new DropDownLabel(i18next.t("filterBar:pokerus"), undefined, DropDownState.OFF),
       new DropDownLabel(i18next.t("filterBar:hasPokerus"), undefined, DropDownState.ON),
     ];
+    const completeLabels = [
+      new DropDownLabel(i18next.t("filterBar:complete"), undefined, DropDownState.OFF),
+      new DropDownLabel(i18next.t("filterBar:isComplete"), undefined, DropDownState.ON),
+      new DropDownLabel(i18next.t("filterBar:notComplete"), undefined, DropDownState.EXCLUDE),
+    ];
     const miscOptions = [
       new DropDownOption("STARTER", starters),
       new DropDownOption("FAVORITE", favoriteLabels),
@@ -485,6 +491,7 @@ export class PokedexUiHandler extends MessageUiHandler {
       new DropDownOption("ENCOUNTERED_SPECIES", encounteredSpeciesLabels),
       new DropDownOption("EGG", eggLabels),
       new DropDownOption("POKERUS", pokerusLabels),
+      new DropDownOption("COMPLETE", completeLabels),
     ];
     this.filterBar.addFilter(
       DropDownColumn.MISC,
@@ -1756,6 +1763,21 @@ export class PokedexUiHandler extends MessageUiHandler {
         }
       });
 
+      // 100% Complete Filter
+      // Only ever matches starter (root) species - evolutions are never shown individually here.
+      const isComplete = isStarter && isSpeciesFullyComplete(species, dexEntry, starterData);
+      const fitsComplete = this.filterBar.getVals(DropDownColumn.MISC).some(misc => {
+        if (misc.val === "COMPLETE" && misc.state === DropDownState.ON) {
+          return isComplete;
+        }
+        if (misc.val === "COMPLETE" && misc.state === DropDownState.EXCLUDE) {
+          return isStarter && !isComplete;
+        }
+        if (misc.val === "COMPLETE" && misc.state === DropDownState.OFF) {
+          return true;
+        }
+      });
+
       if (
         fitsName
         && fitsAbilities
@@ -1774,6 +1796,7 @@ export class PokedexUiHandler extends MessageUiHandler {
         && fitsEncountered
         && fitsEgg
         && fitsPokerus
+        && fitsComplete
       ) {
         this.filteredPokemonData.push(data);
       }
