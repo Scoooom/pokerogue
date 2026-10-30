@@ -33,6 +33,7 @@ import { Passive as PassiveAttr } from "#enums/passive";
 import { PokemonIconAnimMode } from "#enums/pokemon-icon-anim-mode";
 import { PokemonType } from "#enums/pokemon-type";
 import type { SpeciesId } from "#enums/species-id";
+import { STARTER_MARKINGS } from "#enums/starter-marking";
 import { TextStyle } from "#enums/text-style";
 import { UiMode } from "#enums/ui-mode";
 import type { Variant } from "#sprites/variant";
@@ -471,6 +472,23 @@ export class StarterSelectUiHandler extends MessageUiHandler {
       DropDownColumn.MISC,
       i18next.t("filterBar:miscFilter"),
       new DropDown(0, 0, miscOptions, () => this.updateStarters(), DropDownType.RADIAL),
+    );
+
+    // markings filter (AND filter: every marking turned ON/EXCLUDE must independently be satisfied)
+    const markingOptions = STARTER_MARKINGS.map(({ marking, textureKey, labelKey }) => {
+      const markSprite = globalScene.add.sprite(0, 0, textureKey);
+      markSprite.setScale(0.5);
+      const markLabels = [
+        new DropDownLabel(i18next.t(`filterBar:${labelKey}`), markSprite, DropDownState.OFF),
+        new DropDownLabel(i18next.t(`filterBar:${labelKey}Has`), markSprite, DropDownState.ON),
+        new DropDownLabel(i18next.t(`filterBar:${labelKey}None`), markSprite, DropDownState.EXCLUDE),
+      ];
+      return new DropDownOption(marking, markLabels);
+    });
+    filterBar.addFilter(
+      DropDownColumn.MARKINGS,
+      i18next.t("filterBar:markingsFilter"),
+      new DropDown(0, 0, markingOptions, () => this.updateStarters(), DropDownType.RADIAL),
     );
 
     // sort filter
@@ -1877,6 +1895,55 @@ export class StarterSelectUiHandler extends MessageUiHandler {
         },
       });
     }
+    const showMarkingOptions = () => {
+      this.blockInput = true;
+      ui.setMode(UiMode.STARTER_SELECT).then(() => {
+        ui.showText(i18next.t("starterSelectUiHandler:selectMarkings"), null, () => {
+          const currentMarkings = starterPreferences.markings ?? [];
+          ui.setModeWithoutClear(UiMode.OPTION_SELECT, {
+            options: STARTER_MARKINGS.map(({ marking, labelKey }) => {
+              const isSet = currentMarkings.includes(marking);
+              const option: OptionSelectItem = {
+                label: `${i18next.t(`starterSelectUiHandler:${isSet ? "markingSet" : "markingUnset"}`)} ${i18next.t(`filterBar:${labelKey}`)}`,
+                handler: () => {
+                  const markings = new Set(starterPreferences.markings ?? []);
+                  if (markings.has(marking)) {
+                    markings.delete(marking);
+                  } else {
+                    markings.add(marking);
+                  }
+                  starterPreferences.markings = Array.from(markings);
+                  originalStarterPreferences.markings = starterPreferences.markings.slice();
+                  if (starterContainer) {
+                    starterContainer.setMarkings(starterPreferences.markings);
+                  }
+                  showMarkingOptions();
+                  return true;
+                },
+              };
+              return option;
+            }).concat({
+              label: i18next.t("menu:cancel"),
+              handler: () => {
+                this.clearText();
+                ui.setMode(UiMode.STARTER_SELECT);
+                this.blockInput = false;
+                return true;
+              },
+            }),
+            maxOptions: 8,
+            yOffset: 29,
+          } satisfies OptionSelectModeConfig as OptionSelectModeConfig);
+        });
+      });
+    };
+    options.push({
+      label: i18next.t("starterSelectUiHandler:manageMarkings"),
+      handler: () => {
+        showMarkingOptions();
+        return true;
+      },
+    });
     options.push({
       label: i18next.t("menu:rename"),
       handler: () => {
@@ -2525,6 +2592,19 @@ export class StarterSelectUiHandler extends MessageUiHandler {
         return false;
       });
 
+      // Markings Filter — unlike every other column, this is an AND filter: every marking
+      // the player turned ON or EXCLUDE must independently be satisfied by this starter.
+      const starterMarkings = this.starterPreferences[starterId]?.markings ?? [];
+      const fitsMarkings = this.filterBar.getVals(DropDownColumn.MARKINGS).every(marking => {
+        if (marking.state === DropDownState.ON) {
+          return starterMarkings.includes(marking.val);
+        }
+        if (marking.state === DropDownState.EXCLUDE) {
+          return !starterMarkings.includes(marking.val);
+        }
+        return true;
+      });
+
       if (
         fitsGen
         && fitsType
@@ -2536,6 +2616,7 @@ export class StarterSelectUiHandler extends MessageUiHandler {
         && fitsHA
         && fitsEgg
         && fitsPokerus
+        && fitsMarkings
       ) {
         return true;
       }
@@ -2627,6 +2708,7 @@ export class StarterSelectUiHandler extends MessageUiHandler {
         .setVisible(starterDataEntry.classicWinCount > 0)
         .setTexture(dexEntry.ribbons.has(RibbonData.NUZLOCKE) ? "champion_ribbon_emerald" : "champion_ribbon");
       container.favoriteIcon.setVisible(this.starterPreferences[starterId]?.favorite ?? false);
+      container.setMarkings(this.starterPreferences[starterId]?.markings);
 
       if (settings.display.candyUpgradeDisplayMode === CandyUpgradeDisplayMode.ICON) {
         container.candyUpgradeIcon.setTint(argbFromRgba(rgbHexToRgba(getStarterColors(starterId)[0])));

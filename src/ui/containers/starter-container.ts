@@ -2,6 +2,7 @@ import { globalScene } from "#app/global-scene";
 import { speciesDataRegistry } from "#app/global-species-data-registry";
 import type { PokemonSpecies } from "#data/pokemon-species";
 import type { SpeciesId } from "#enums/species-id";
+import { STARTER_MARKINGS, type StarterMarking } from "#enums/starter-marking";
 import { TextStyle } from "#enums/text-style";
 import type { DexAttrProps } from "#types/save-data";
 import { addTextObject } from "#ui/text";
@@ -14,6 +15,7 @@ export class StarterContainer extends Phaser.GameObjects.Container {
   public starterPassiveBgs: Phaser.GameObjects.Image;
   public hiddenAbilityIcon: Phaser.GameObjects.Image;
   public favoriteIcon: Phaser.GameObjects.Image;
+  public markingIcons: Phaser.GameObjects.Image[] = [];
   public classicWinIcon: Phaser.GameObjects.Image;
   public candyUpgradeIcon: Phaser.GameObjects.Image;
   public candyUpgradeOverlayIcon: Phaser.GameObjects.Image;
@@ -63,6 +65,15 @@ export class StarterContainer extends Phaser.GameObjects.Container {
     this.add(favoriteIcon);
     this.favoriteIcon = favoriteIcon;
 
+    STARTER_MARKINGS.forEach(({ textureKey }, i) => {
+      const markIcon = globalScene.add.image(3 + (i % 3) * 3, 12 + Math.floor(i / 3) * 3, textureKey);
+      markIcon.setOrigin(0, 0);
+      markIcon.setScale(0.35);
+      markIcon.setVisible(false);
+      this.add(markIcon);
+      this.markingIcons.push(markIcon);
+    });
+
     const classicWinIcon = globalScene.add.image(0, 12, "champion_ribbon");
     classicWinIcon.setOrigin(0, 0);
     classicWinIcon.setScale(0.5);
@@ -109,6 +120,7 @@ export class StarterContainer extends Phaser.GameObjects.Container {
       ...this.shinyIcons,
       this.hiddenAbilityIcon,
       this.favoriteIcon,
+      ...this.markingIcons,
       this.classicWinIcon,
       this.candyUpgradeIcon,
       this.candyUpgradeOverlayIcon,
@@ -116,6 +128,16 @@ export class StarterContainer extends Phaser.GameObjects.Container {
       if (icon) {
         this.bringToTop(icon);
       }
+    });
+  }
+
+  /**
+   * Show only the marking icons corresponding to the given markings, hiding the rest.
+   * @param markings - The markings currently assigned to this starter
+   */
+  public setMarkings(markings: StarterMarking[] | undefined): void {
+    STARTER_MARKINGS.forEach(({ marking }, i) => {
+      this.markingIcons[i].setVisible(!!markings?.includes(marking));
     });
   }
 

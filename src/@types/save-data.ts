@@ -8,6 +8,7 @@ import type { Nature } from "#enums/nature";
 import type { PlayerGender } from "#enums/player-gender";
 import type { PokemonType } from "#enums/pokemon-type";
 import type { SpeciesId } from "#enums/species-id";
+import type { StarterMarking } from "#enums/starter-marking";
 import type { MysteryEncounterSaveData } from "#mystery-encounters/mystery-encounter-save-data";
 import type { Variant } from "#sprites/variant";
 import type { ArenaData } from "#system/arena-data";
@@ -107,6 +108,7 @@ export interface StarterPreferences {
   favorite?: boolean | undefined;
   female?: boolean | undefined;
   formIndex?: number | undefined;
+  markings?: StarterMarking[] | undefined;
   nature?: number | undefined;
   nickname?: string | undefined;
   shiny?: boolean | undefined;
